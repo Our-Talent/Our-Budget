@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F6F2E7; --paper-raised:#FBF8F1; --paper-line:#DDD2B5;
+    --ink:#21281F; --ink-soft:#5C6353; --ink-faint:#8B9080;
+    --pine:#2F6F5E; --pine-deep:#1E4A3D; --rust:#B4432C; --gold:#A9822F;
+    --cat-1:#2F6F5E; --cat-2:#C46A44; --cat-3:#3F5B6B; --cat-4:#A9822F; --cat-5:#6B4C6B; --cat-6:#6B7A3F;
+    --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; background:var(--paper); color:var(--ink); font-family:'IBM Plex Sans', sans-serif; overscroll-behavior:none; height:100%;}
+  body{background-image:repeating-linear-gradient(transparent, transparent 27px, var(--paper-line) 28px); background-attachment:local;}
+  #app{max-width:480px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; padding-top:var(--safe-top); position:relative;}
+
+  .topbar{padding:22px 20px 10px; display:flex; align-items:center; justify-content:space-between;}
+  .brand-row{display:flex; align-items:center; gap:8px;}
+  .brand{font-family:'Fraunces', serif; font-weight:600; font-size:15px; letter-spacing:0.06em; text-transform:uppercase; color:var(--pine-deep);}
+  .sync-dot{width:7px; height:7px; border-radius:50%; background:var(--ink-faint);}
+  .sync-dot.on{background:var(--pine);}
+  .sync-dot.off{background:var(--rust);}
+  .gear-btn{background:none; border:none; color:var(--ink-faint); cursor:pointer; padding:6px; display:flex;}
+  .gear-btn svg{width:17px; height:17px;}
+
+  .banner{margin:0 20px 14px; padding:11px 14px; background:var(--paper-raised); border:1px dashed var(--paper-line); border-radius:8px; font-size:12.5px; color:var(--ink-soft); display:flex; justify-content:space-between; align-items:center; gap:10px;}
+  .banner a, .banner .link{color:var(--pine-deep); font-weight:600; cursor:pointer; white-space:nowrap;}
+
+  .month-nav{display:flex; align-items:center; gap:14px; padding:0 20px 14px;}
+  .month-nav button{background:none; border:none; color:var(--ink-soft); cursor:pointer; padding:6px; display:flex;}
+  .month-nav button svg{width:16px; height:16px;}
+  .month-label{font-family:'IBM Plex Mono', monospace; font-size:13px; letter-spacing:0.04em; color:var(--ink); flex:1; text-align:center;}
+
+  .hero{padding:6px 20px 22px; text-align:center; border-bottom:1px solid var(--paper-line); margin:0 20px 18px;}
+  .hero-label{font-size:11px; text-transform:uppercase; letter-spacing:0.12em; color:var(--ink-faint); margin-bottom:6px;}
+  .hero-figure{font-family:'Fraunces', serif; font-weight:500; font-size:52px; line-height:1; font-variant-numeric:tabular-nums; letter-spacing:-0.01em;}
+  .hero-figure.over{color:var(--rust);} .hero-figure.under{color:var(--pine-deep);}
+  .hero-sub{margin-top:8px; font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--ink-soft);}
+
+  .chart-row{display:flex; align-items:center; gap:18px; padding:0 20px 22px;}
+  .donut{width:96px; height:96px; border-radius:50%; flex-shrink:0; position:relative;}
+  .donut::after{content:''; position:absolute; inset:14px; background:var(--paper); border-radius:50%;}
+  .legend{flex:1; display:flex; flex-direction:column; gap:6px;}
+  .legend-item{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ink-soft);}
+  .legend-dot{width:8px; height:8px; border-radius:2px; flex-shrink:0;}
+  .legend-name{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .legend-pct{font-family:'IBM Plex Mono', monospace; color:var(--ink-faint);}
+
+  .section-label{font-size:11px; text-transform:uppercase; letter-spacing:0.12em; color:var(--ink-faint); padding:0 20px 10px; display:flex; justify-content:space-between; align-items:center;}
+
+  .ledger{padding:0 20px; display:flex; flex-direction:column; gap:10px; margin-bottom:24px;}
+  .category-card{display:flex; background:var(--paper-raised); border-radius:3px; box-shadow:0 1px 0 var(--paper-line); overflow:hidden;}
+  .cat-perf{width:14px; flex-shrink:0; background-image:radial-gradient(circle, var(--paper) 2.6px, transparent 2.7px); background-size:14px 13px; background-position:0 3px; background-repeat:repeat-y;}
+  .cat-body{flex:1; padding:12px 14px 12px 10px;}
+  .cat-top{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;}
+  .cat-name{font-size:14px; font-weight:500;}
+  .cat-amounts{font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--ink-soft);}
+  .cat-amounts .spent{color:var(--ink); font-weight:500;} .cat-amounts .spent.over{color:var(--rust);}
+  .track{height:5px; background:var(--paper-line); border-radius:3px; overflow:hidden;}
+  .fill{height:100%; border-radius:3px; transition:width .3s ease;}
+  .empty-state{padding:30px 20px; text-align:center; color:var(--ink-faint); font-size:13px; line-height:1.6;}
+
+  .entries{padding:0 20px; display:flex; flex-direction:column; margin-bottom:100px;}
+  .entry-row{display:flex; justify-content:space-between; align-items:center; padding:11px 0; border-bottom:1px dashed var(--paper-line); cursor:pointer;}
+  .entry-left{display:flex; align-items:center; gap:10px; min-width:0;}
+  .entry-dot{width:7px; height:7px; border-radius:2px; flex-shrink:0;}
+  .entry-info{min-width:0;}
+  .entry-note{font-size:13px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .entry-meta{font-size:11px; color:var(--ink-faint); font-family:'IBM Plex Mono', monospace;}
+  .entry-amount{font-family:'IBM Plex Mono', monospace; font-size:13px; font-weight:500; flex-shrink:0; padding-left:10px;}
+
+  .cat-manage-row{display:flex; align-items:center; gap:12px; background:var(--paper-raised); border-radius:3px; padding:12px 14px; margin-bottom:10px; box-shadow:0 1px 0 var(--paper-line);}
+  .cat-chip{width:12px; height:12px; border-radius:3px; flex-shrink:0;}
+  .cat-manage-name{flex:1; font-size:14px;}
+  .cat-manage-limit{font-family:'IBM Plex Mono', monospace; font-size:13px; width:78px; text-align:right; background:none; border:none; border-bottom:1px solid var(--paper-line); padding:2px 0; color:var(--ink);}
+  .cat-manage-limit:focus{outline:none; border-color:var(--pine);}
+  .icon-btn{background:none; border:none; color:var(--ink-faint); cursor:pointer; padding:4px; display:flex;}
+  .icon-btn svg{width:15px; height:15px;}
+
+  .tabbar{position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:480px; background:var(--paper-raised); border-top:1px solid var(--paper-line); display:flex; padding-bottom:var(--safe-bottom); z-index:20;}
+  .tab-btn{flex:1; background:none; border:none; padding:12px 0 10px; display:flex; flex-direction:column; align-items:center; gap:4px; color:var(--ink-faint); cursor:pointer; font-family:'IBM Plex Sans', sans-serif; font-size:10px; letter-spacing:0.04em; text-transform:uppercase;}
+  .tab-btn svg{width:20px; height:20px;}
+  .tab-btn.active{color:var(--pine-deep);}
+  .tab-btn.plus .plus-circle{width:38px; height:38px; border-radius:50%; background:var(--pine-deep); display:flex; align-items:center; justify-content:center; margin-bottom:2px;}
+  .tab-btn.plus .plus-circle svg{width:18px; height:18px; color:var(--paper);}
+  .tab-btn.plus{color:var(--pine-deep);}
+
+  .scrim{position:fixed; inset:0; background:rgba(33,40,31,0.4); opacity:0; pointer-events:none; transition:opacity .25s ease; z-index:30;}
+  .scrim.open{opacity:1; pointer-events:auto;}
+  .sheet{position:fixed; left:50%; bottom:0; transform:translate(-50%, 100%); width:100%; max-width:480px; background:var(--paper); border-radius:16px 16px 0 0; z-index:31; transition:transform .3s cubic-bezier(.32,.72,0,1); padding:10px 20px calc(24px + var(--safe-bottom)); box-shadow:0 -4px 24px rgba(0,0,0,0.15); max-height:88vh; overflow-y:auto;}
+  .sheet.open{transform:translate(-50%, 0);}
+  .sheet-handle{width:36px; height:4px; background:var(--paper-line); border-radius:2px; margin:0 auto 16px;}
+  .sheet-title{font-family:'Fraunces', serif; font-size:19px; font-weight:600; margin-bottom:6px;}
+  .sheet-subtitle{font-size:12.5px; color:var(--ink-soft); margin-bottom:18px; line-height:1.5;}
+  .amount-input-row{display:flex; align-items:baseline; justify-content:center; padding:16px 0 22px; border-bottom:1px solid var(--paper-line); margin-bottom:18px;}
+  .amount-input-row span{font-family:'Fraunces', serif; font-size:30px; color:var(--ink-faint); margin-right:2px;}
+  .amount-input{font-family:'Fraunces', serif; font-size:44px; border:none; background:none; width:100%; max-width:220px; text-align:center; color:var(--ink); font-variant-numeric:tabular-nums;}
+  .amount-input:focus{outline:none;}
+  .field-label{font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:var(--ink-faint); margin-bottom:8px;}
+  .chip-row{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px;}
+  .chip{padding:8px 14px; border-radius:20px; border:1px solid var(--paper-line); background:var(--paper-raised); font-size:13px; cursor:pointer; display:flex; align-items:center; gap:6px; color:var(--ink-soft);}
+  .chip .chip-dot{width:8px; height:8px; border-radius:50%;}
+  .chip.selected{border-color:transparent; color:#fff;}
+  .text-field, textarea.text-field{width:100%; padding:11px 12px; border:1px solid var(--paper-line); border-radius:8px; background:var(--paper-raised); font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--ink); margin-bottom:14px;}
+  input.text-field{font-family:'IBM Plex Sans',sans-serif; font-size:14px;}
+  .text-field:focus{outline:none; border-color:var(--pine);}
+  textarea.text-field{min-height:90px; resize:vertical;}
+  .save-btn{width:100%; padding:15px; background:var(--pine-deep); color:var(--paper); border:none; border-radius:10px; font-family:'IBM Plex Sans', sans-serif; font-weight:600; font-size:14px; letter-spacing:0.02em; cursor:pointer;}
+  .save-btn:active{background:var(--pine);}
+  .new-cat-form{display:flex; gap:8px; margin-bottom:20px;}
+  .new-cat-form input{flex:1;}
+  .add-cat-btn{background:var(--pine-deep); color:var(--paper); border:none; border-radius:8px; padding:0 16px; font-size:20px; cursor:pointer; line-height:1;}
+  .color-pick-row{display:flex; gap:8px; margin-bottom:18px;}
+  .color-pick{width:26px; height:26px; border-radius:50%; cursor:pointer; border:2px solid transparent;}
+  .color-pick.selected{border-color:var(--ink);}
+  .status-line{font-size:11.5px; color:var(--ink-faint); margin:-6px 0 18px; font-family:'IBM Plex Mono',monospace;}
+  .status-line.err{color:var(--rust);}
+  .link-btn{background:none;border:none;color:var(--rust);font-size:12.5px;cursor:pointer;padding:0;margin-top:2px;text-decoration:underline;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const CAT_COLORS = ['var(--cat-1)','var(--cat-2)','var(--cat-3)','var(--cat-4)','var(--cat-5)','var(--cat-6)'];
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+let state = { categories: [], expenses: [], month: null };
+let view = 'dashboard';
+let newExpense = { amount:'', categoryId:null, note:'' };
+let newCatColor = CAT_COLORS[0];
+let syncStatus = 'off'; // off | on | error
+let syncErrorMsg = '';
+let db = null, docRef = null, unsub = null, applyingRemote = false;
+let setupError = '';
+
+function pad(n){ return n<10 ? '0'+n : ''+n; }
+function currentMonthKey(){ const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1); }
+function fmt(n){ return '$' + Math.abs(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function uid(){ return Math.random().toString(36).slice(2,10); }
+function escapeHtml(s){ const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
+
+/* ---------------- persistence ---------------- */
+
+function getLocalCreds(){
+  try{
+    const cfg = localStorage.getItem('ledger_fb_config');
+    const code = localStorage.getItem('ledger_household_code');
+    if(cfg && code) return { config: JSON.parse(cfg), code };
+  } catch(e){}
+  return null;
+}
+function saveLocalCreds(config, code){
+  try{
+    localStorage.setItem('ledger_fb_config', JSON.stringify(config));
+    localStorage.setItem('ledger_household_code', code);
+  } catch(e){}
+}
+function clearLocalCreds(){
+  try{ localStorage.removeItem('ledger_fb_config'); localStorage.removeItem('ledger_household_code'); } catch(e){}
+}
+
+function seedDefaults(){
+  return {
+    categories: [
+      {id: uid(), name:'Groceries', color: CAT_COLORS[0], limit: 500},
+      {id: uid(), name:'Rent', color: CAT_COLORS[2], limit: 1400},
+      {id: uid(), name:'Dining Out', color: CAT_COLORS[1], limit: 200},
+      {id: uid(), name:'Transport', color: CAT_COLORS[3], limit: 150},
+      {id: uid(), name:'Fun', color: CAT_COLORS[4], limit: 120},
+    ],
+    expenses: [],
+    month: currentMonthKey()
+  };
+}
+
+async function connectFirebase(config, code){
+  try{
+    const app = initializeApp(config, 'ledger-' + Date.now());
+    db = getFirestore(app);
+    docRef = doc(db, 'ledgers', code);
+    if(unsub) unsub();
+    unsub = onSnapshot(docRef, (snap)=>{
+      if(snap.exists()){
+        applyingRemote = true;
+        state = snap.data();
+        if(!state.month) state.month = currentMonthKey();
+        applyingRemote = false;
+        syncStatus = 'on'; syncErrorMsg='';
+        render();
+      } else {
+        state = seedDefaults();
+        pushState();
+      }
+    }, (err)=>{
+      syncStatus = 'error'; syncErrorMsg = err.message || 'Sync error';
+      render();
+    });
+    saveLocalCreds(config, code);
+  } catch(e){
+    syncStatus = 'error'; syncErrorMsg = e.message || 'Could not connect';
+    render();
+  }
+}
+
+let pushTimer=null;
+function pushState(){
+  if(applyingRemote || !docRef) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(async ()=>{
+    try{ await setDoc(docRef, state); }
+    catch(e){ syncStatus='error'; syncErrorMsg = e.message || 'Save failed'; render(); }
+  }, 150);
+}
+
+function boot(){
+  const creds = getLocalCreds();
+  if(creds){
+    connectFirebase(creds.config, creds.code);
+  } else {
+    state = seedDefaults();
+  }
+  if(!state.month) state.month = currentMonthKey();
+  render();
+}
+
+/* ---------------- month / data helpers ---------------- */
+
+function monthLabel(key){ const [y,m] = key.split('-').map(Number); return MONTH_NAMES[m-1] + ' ' + y; }
+function shiftMonth(delta){
+  let [y,m] = state.month.split('-').map(Number);
+  m += delta; if(m<1){m=12;y--;} if(m>12){m=1;y++;}
+  state.month = y+'-'+pad(m); render();
+}
+function expensesForMonth(){ return state.expenses.filter(e=>e.date.slice(0,7)===state.month); }
+function spentByCategory(){ const map={}; expensesForMonth().forEach(e=>{ map[e.categoryId]=(map[e.categoryId]||0)+e.amount; }); return map; }
+
+function icon(name){
+  const icons = {
+    ledger:'<path d="M4 3h13a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H4z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 3v18" stroke="currentColor" stroke-width="1.6"/><path d="M8 8h7M8 12h7M8 16h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+    list:'<circle cx="5" cy="6" r="1.4" fill="currentColor"/><circle cx="5" cy="12" r="1.4" fill="currentColor"/><circle cx="5" cy="18" r="1.4" fill="currentColor"/><path d="M9 6h11M9 12h11M9 18h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+    plus:'<path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>',
+    chevLeft:'<path d="M14 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+    chevRight:'<path d="M10 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+    trash:'<path d="M4 6h16M9 6V4h6v2M6 6l1 14h10l1-14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+    gear:'<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+  };
+  return `<svg viewBox="0 0 24 24">${icons[name]}</svg>`;
+}
+
+/* ---------------- render ---------------- */
+
+function render(){
+  const app = document.getElementById('app');
+  const dotClass = syncStatus==='on' ? 'on' : (syncStatus==='error' ? 'off' : '');
+  app.innerHTML = `
+    <div class="topbar">
+      <div class="brand-row">
+        <div class="brand">Ledger</div>
+        <span class="sync-dot ${dotClass}" title="${syncStatus==='on'?'Synced':syncStatus==='error'?'Sync error':'Not synced'}"></span>
+      </div>
+      <button class="gear-btn" onclick="openSetupSheet()">${icon('gear')}</button>
+    </div>
+    ${syncStatus!=='on' ? `<div class="banner"><span>${syncStatus==='error' ? 'Sync error \u2014 tap to reconnect' : 'This device is not syncing with your household yet.'}</span><span class="link" onclick="openSetupSheet()">Set up</span></div>` : ''}
+    ${view==='dashboard' ? renderDashboard() : renderCategoriesView()}
+    <div class="tabbar">
+      <button class="tab-btn ${view==='dashboard'?'active':''}" onclick="setView('dashboard')">${icon('ledger')}<span>Ledger</span></button>
+      <button class="tab-btn plus" onclick="openExpenseSheet()"><div class="plus-circle">${icon('plus')}</div><span>Add</span></button>
+      <button class="tab-btn ${view==='categories'?'active':''}" onclick="setView('categories')">${icon('list')}<span>Categories</span></button>
+    </div>
+  `;
+}
+
+function renderDashboard(){
+  const spent = spentByCategory();
+  const totalLimit = state.categories.reduce((s,c)=>s+Number(c.limit||0),0);
+  const totalSpent = Object.values(spent).reduce((a,b)=>a+b,0);
+  const remaining = totalLimit - totalSpent;
+  const heroClass = remaining < 0 ? 'over' : 'under';
+
+  let donutGradient = 'var(--paper-line)'; let legendHtml = '';
+  if(totalSpent > 0){
+    let acc = 0; const stops = [];
+    state.categories.forEach(c=>{
+      const val = spent[c.id]||0; if(val<=0) return;
+      const pct = val/totalSpent*100;
+      stops.push(`${c.color} ${acc}% ${acc+pct}%`); acc += pct;
+    });
+    donutGradient = `conic-gradient(${stops.join(',')})`;
+    legendHtml = state.categories.filter(c=>(spent[c.id]||0)>0).map(c=>{
+      const val = spent[c.id]||0; const pct = Math.round(val/totalSpent*100);
+      return `<div class="legend-item"><span class="legend-dot" style="background:${c.color}"></span><span class="legend-name">${escapeHtml(c.name)}</span><span class="legend-pct">${pct}%</span></div>`;
+    }).join('');
+  }
+
+  const ledgerHtml = state.categories.length ? state.categories.map(c=>{
+    const val = spent[c.id]||0; const limit = Number(c.limit||0);
+    const pct = limit>0 ? Math.min(100,(val/limit)*100) : 0;
+    const over = limit>0 && val>limit;
+    return `<div class="category-card">
+      <div class="cat-perf" style="background-color:${c.color}"></div>
+      <div class="cat-body">
+        <div class="cat-top"><span class="cat-name">${escapeHtml(c.name)}</span><span class="cat-amounts"><span class="spent ${over?'over':''}">${fmt(val)}</span> / ${fmt(limit)}</span></div>
+        <div class="track"><div class="fill" style="width:${pct}%; background:${over?'var(--rust)':c.color}"></div></div>
+      </div></div>`;
+  }).join('') : `<div class="empty-state">No categories yet. Add one from the Categories tab.</div>`;
+
+  const monthExpenses = expensesForMonth().slice().sort((a,b)=> b.date.localeCompare(a.date));
+  const entriesHtml = monthExpenses.length ? monthExpenses.map(e=>{
+    const cat = state.categories.find(c=>c.id===e.categoryId);
+    const d = new Date(e.date+'T00:00:00');
+    return `<div class="entry-row" onclick="deleteExpense('${e.id}')">
+      <div class="entry-left"><span class="entry-dot" style="background:${cat?cat.color:'var(--ink-faint)'}"></span>
+        <div class="entry-info"><div class="entry-note">${escapeHtml(e.note || (cat?cat.name:'Uncategorized'))}</div>
+        <div class="entry-meta">${cat?escapeHtml(cat.name):'Uncategorized'} \u00b7 ${d.toLocaleDateString(undefined,{month:'short',day:'numeric'})}${e.by?' \u00b7 '+escapeHtml(e.by):''}</div></div></div>
+      <div class="entry-amount">${fmt(e.amount)}</div></div>`;
+  }).join('') : `<div class="empty-state" style="padding:16px 0;">No entries this month yet.</div>`;
+
+  return `
+    <div class="month-nav"><button onclick="shiftMonth(-1)">${icon('chevLeft')}</button><div class="month-label">${monthLabel(state.month)}</div><button onclick="shiftMonth(1)">${icon('chevRight')}</button></div>
+    <div class="hero"><div class="hero-label">${remaining<0?'Over budget by':'Remaining this month'}</div><div class="hero-figure ${heroClass}">${fmt(remaining)}</div><div class="hero-sub">${fmt(totalSpent)} spent of ${fmt(totalLimit)} budgeted</div></div>
+    ${totalSpent>0 ? `<div class="chart-row"><div class="donut" style="background:${donutGradient}"></div><div class="legend">${legendHtml}</div></div>` : ''}
+    <div class="section-label">Categories</div><div class="ledger">${ledgerHtml}</div>
+    <div class="section-label">Recent entries</div><div class="entries">${entriesHtml}</div>
+  `;
+}
+
+function renderCategoriesView(){
+  const rows = state.categories.map(c=>`
+    <div class="cat-manage-row"><span class="cat-chip" style="background:${c.color}"></span><span class="cat-manage-name">${escapeHtml(c.name)}</span>
+      <input class="cat-manage-limit" type="number" inputmode="decimal" value="${c.limit}" onchange="updateLimit('${c.id}', this.value)">
+      <button class="icon-btn" onclick="deleteCategory('${c.id}')">${icon('trash')}</button></div>`).join('');
+  const colorPicks = CAT_COLORS.map(c=>`<div class="color-pick ${newCatColor===c?'selected':''}" style="background:${c}" onclick="pickNewCatColor('${c}')"></div>`).join('');
+  return `<div style="padding:6px 20px 22px;">
+    <div class="section-label" style="padding:0 0 10px;">Monthly limits</div>
+    ${rows || '<div class="empty-state">No categories yet.</div>'}
+    <div class="section-label" style="padding:22px 0 10px;">New category</div>
+    <div class="color-pick-row">${colorPicks}</div>
+    <div class="new-cat-form"><input class="text-field" id="newCatName" placeholder="Category name" style="margin-bottom:0;"><input class="text-field" id="newCatLimit" type="number" inputmode="decimal" placeholder="Limit" style="margin-bottom:0; max-width:90px;"><button class="add-cat-btn" onclick="addCategory()">+</button></div>
+    <div style="margin-bottom:90px;"></div></div>`;
+}
+
+/* ---------------- interactions ---------------- */
+
+function setView(v){ view = v; render(); }
+function updateLimit(id, val){ const c = state.categories.find(c=>c.id===id); if(c){ c.limit = Number(val)||0; pushState(); } }
+function deleteCategory(id){ state.categories = state.categories.filter(c=>c.id!==id); pushState(); render(); }
+function pickNewCatColor(c){ newCatColor = c; render(); }
+function addCategory(){
+  const nameEl = document.getElementById('newCatName'); const limitEl = document.getElementById('newCatLimit');
+  const name = nameEl.value.trim(); if(!name) return;
+  state.categories.push({id:uid(), name, color:newCatColor, limit:Number(limitEl.value)||0});
+  newCatColor = CAT_COLORS[(state.categories.length)%CAT_COLORS.length];
+  pushState(); render();
+}
+function deleteExpense(id){ if(!confirm('Delete this entry?')) return; state.expenses = state.expenses.filter(e=>e.id!==id); pushState(); render(); }
+
+function openExpenseSheet(){
+  newExpense = { amount:'', categoryId: state.categories[0]?state.categories[0].id:null, note:'' };
+  renderExpenseSheet(); openSheetEl();
+}
+function renderExpenseSheet(){
+  const sheet = document.getElementById('sheet');
+  const chips = state.categories.map(c=>`<div class="chip ${newExpense.categoryId===c.id?'selected':''}" style="${newExpense.categoryId===c.id?'background:'+c.color:''}" onclick="selectCat('${c.id}')"><span class="chip-dot" style="background:${newExpense.categoryId===c.id?'#fff':c.color}"></span>${escapeHtml(c.name)}</div>`).join('');
+  sheet.innerHTML = `<div class="sheet-handle"></div><div class="sheet-title">Add expense</div>
+    <div class="amount-input-row"><span>$</span><input class="amount-input" id="amountInput" inputmode="decimal" placeholder="0.00" value="${newExpense.amount}" oninput="updateAmount(this.value)"></div>
+    <div class="field-label">Category</div><div class="chip-row">${chips || '<span style="font-size:13px;color:var(--ink-faint)">Add a category first, from the Categories tab.</span>'}</div>
+    <div class="field-label">Note (optional)</div><input class="text-field" id="noteInput" placeholder="e.g. Coffee with Sam" value="${escapeHtml(newExpense.note)}" oninput="updateNote(this.value)">
+    <button class="save-btn" onclick="saveExpense()">Save entry</button>`;
+}
+function selectCat(id){ newExpense.categoryId = id; renderExpenseSheet(); }
+function updateAmount(v){ newExpense.amount = v; }
+function updateNote(v){ newExpense.note = v; }
+function saveExpense(){
+  const amt = parseFloat(newExpense.amount);
+  if(!amt || amt<=0){ shake('amountInput'); return; }
+  if(!newExpense.categoryId){ return; }
+  const now = new Date();
+  const dateStr = now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
+  state.expenses.push({id:uid(), amount:amt, categoryId:newExpense.categoryId, note:newExpense.note.trim(), date:dateStr});
+  state.month = dateStr.slice(0,7);
+  pushState(); closeSheetEl(); view='dashboard'; render();
+}
+function shake(id){
+  const el = document.getElementById(id); if(!el) return;
+  el.style.transition='transform .1s'; el.style.transform='translateX(-6px)';
+  setTimeout(()=>{el.style.transform='translateX(6px)';},100);
+  setTimeout(()=>{el.style.transform='translateX(0)';},200);
+}
+
+/* ---------------- setup sheet ---------------- */
+
+function openSetupSheet(){ setupError=''; renderSetupSheet(); openSheetEl(); }
+function renderSetupSheet(){
+  const creds = getLocalCreds();
+  const sheet = document.getElementById('sheet');
+  sheet.innerHTML = `<div class="sheet-handle"></div>
+    <div class="sheet-title">Sync setup</div>
+    <div class="sheet-subtitle">Paste the Firebase config from your project's console, pick a household code (any word \u2014 use the exact same one on both phones), then save. Both devices will read and write the same data.</div>
+    <div class="field-label">Firebase config</div>
+    <textarea class="text-field" id="fbConfigInput" placeholder='{ apiKey: "...", authDomain: "...", projectId: "...", ... }'>${creds ? JSON.stringify(creds.config, null, 2) : ''}</textarea>
+    <div class="field-label">Household code</div>
+    <input class="text-field" id="householdInput" placeholder="e.g. millerhousehold" value="${creds ? escapeHtml(creds.code) : ''}">
+    ${setupError ? `<div class="status-line err">${escapeHtml(setupError)}</div>` : `<div class="status-line">Status: ${syncStatus==='on'?'connected':syncStatus==='error'?'error \u2014 '+escapeHtml(syncErrorMsg):'not connected'}</div>`}
+    <button class="save-btn" onclick="saveSetup()">Save and connect</button>
+    ${creds ? `<button class="link-btn" onclick="disconnectSync()">Disconnect this device</button>` : ''}`;
+}
+function saveSetup(){
+  const raw = document.getElementById('fbConfigInput').value.trim();
+  const code = document.getElementById('householdInput').value.trim();
+  if(!raw || !code){ setupError = 'Both fields are required.'; renderSetupSheet(); return; }
+  let config;
+  try{
+    const jsonish = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}')+1);
+    config = new Function('return (' + jsonish + ')')();
+  } catch(e){ setupError = 'Could not read that config \u2014 paste the object exactly as Firebase gave it to you.'; renderSetupSheet(); return; }
+  connectFirebase(config, code).then(()=>{ renderSetupSheet(); });
+  setTimeout(()=>{ renderSetupSheet(); }, 600);
+}
+function disconnectSync(){
+  clearLocalCreds();
+  if(unsub) unsub();
+  syncStatus='off'; db=null; docRef=null;
+  closeSheetEl(); render();
+}
+
+function openSheetEl(){ document.getElementById('scrim').classList.add('open'); document.getElementById('sheet').classList.add('open'); }
+function closeSheetEl(){ document.getElementById('scrim').classList.remove('open'); document.getElementById('sheet').classList.remove('open'); }
+document.getElementById('scrim').addEventListener('click', closeSheetEl);
+
+window.setView = setView; window.shiftMonth = shiftMonth; window.openExpenseSheet = openExpenseSheet;
+window.selectCat = selectCat; window.saveExpense = saveExpense; window.updateLimit = updateLimit;
+window.deleteCategory = deleteCategory; window.addCategory = addCategory; window.pickNewCatColor = pickNewCatColor;
+window.deleteExpense = deleteExpense; window.openSetupSheet = openSetupSheet; window.saveSetup = saveSetup;
+window.disconnectSync = disconnectSync; window.updateAmount = updateAmount; window.updateNote = updateNote;
+
+boot();
+</script>
+</body>
+</html>
