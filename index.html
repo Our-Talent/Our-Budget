@@ -58,6 +58,7 @@
 
   .ledger{padding:0 20px; display:flex; flex-direction:column; gap:10px; margin-bottom:24px;}
   .category-card{display:flex; background:var(--paper-raised); border-radius:3px; box-shadow:0 1px 0 var(--paper-line); overflow:hidden;}
+  .link-toggle{color:var(--pine-deep); text-transform:none; letter-spacing:0; font-family:'IBM Plex Mono', monospace; font-size:12px; cursor:pointer;}
   .category-card.active-week{box-shadow:0 0 0 1.5px var(--pine-deep), 0 1px 0 var(--paper-line);}
   .cat-perf{width:14px; flex-shrink:0; background-image:radial-gradient(circle, var(--paper) 2.6px, transparent 2.7px); background-size:14px 13px; background-position:0 3px; background-repeat:repeat-y;}
   .cat-body{flex:1; padding:12px 14px 12px 10px;}
@@ -124,6 +125,11 @@
   .color-pick.selected{border-color:var(--ink);}
   .status-line{font-size:11.5px; color:var(--ink-faint); margin:-6px 0 18px; font-family:'IBM Plex Mono',monospace;}
   .status-line.err{color:var(--rust);}
+  .backup-box{margin-top:22px; padding-top:16px; border-top:1px dashed var(--paper-line);}
+  .btn-row{display:flex; gap:8px; margin-bottom:8px;}
+  .secondary-btn{flex:1; display:block; width:100%; text-align:center; padding:11px 10px; border:1px solid var(--pine-deep); color:var(--pine-deep); background:none; border-radius:8px; font-family:'IBM Plex Sans', sans-serif; font-size:13px; font-weight:500; cursor:pointer; margin-bottom:8px;}
+  .btn-row .secondary-btn{margin-bottom:0;}
+  .secondary-btn:disabled{opacity:.4; cursor:default;}
   .link-btn{background:none;border:none;color:var(--rust);font-size:12.5px;cursor:pointer;padding:0;margin-top:2px;text-decoration:underline;}
 </style>
 </head>
@@ -134,18 +140,20 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, setDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const CAT_COLORS = ['var(--cat-1)','var(--cat-2)','var(--cat-3)','var(--cat-4)','var(--cat-5)','var(--cat-6)'];
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 let state = { categories: [], expenses: [], month: null };
 let view = 'dashboard';
+let showAll = false;
 let newExpense = { amount:'', categoryId:null, note:'' };
 let newCatColor = CAT_COLORS[0];
 let syncStatus = 'off'; // off | on | error
 let syncErrorMsg = '';
-let db = null, docRef = null, unsub = null, applyingRemote = false;
+let db = null, docRef = null, unsub = null;
+let backupNote = '';
 let setupError = '';
 
 function pad(n){ return n<10 ? '0'+n : ''+n; }
@@ -204,15 +212,17 @@ async function connectFirebase(config, code){
     if(unsub) unsub();
     unsub = onSnapshot(docRef, (snap)=>{
       if(snap.exists()){
-        applyingRemote = true;
-        state = snap.data();
-        if(!state.month) state.month = currentMonthKey();
-        applyingRemote = false;
+        const data = snap.data();
+        const localMonth = state.month;
+        state = { categories: data.categories || [], expenses: data.expenses || [], month: localMonth || currentMonthKey() };
         syncStatus = 'on'; syncErrorMsg='';
+        saveLastCopy();
         render();
       } else {
-        state = seedDefaults();
-        pushState();
+        if(snap.metadata.fromCache){ return; }
+        const seed = seedDefaults();
+        state = seed;
+        setDoc(docRef, { categories: seed.categories, expenses: seed.expenses }).catch(reportError);
       }
     }, (err)=>{
       syncStatus = 'error'; syncErrorMsg = err.message || 'Sync error';
@@ -225,14 +235,103 @@ async function connectFirebase(config, code){
   }
 }
 
-let pushTimer=null;
-function pushState(){
-  if(applyingRemote || !docRef) return;
-  clearTimeout(pushTimer);
-  pushTimer = setTimeout(async ()=>{
-    try{ await setDoc(docRef, state); }
-    catch(e){ syncStatus='error'; syncErrorMsg = e.message || 'Save failed'; render(); }
-  }, 150);
+function reportError(e){
+  syncStatus='error'; syncErrorMsg = (e && e.message) || 'Save failed'; render();
+}
+
+/* Safe saving: each change is sent on its own, so one phone can never overwrite the other's entries. */
+async function mutateCategories(fn){
+  state.categories = fn(state.categories);
+  if(!docRef) return;
+  try{
+    await runTransaction(db, async (tx)=>{
+      const snap = await tx.get(docRef);
+      const data = snap.exists() ? snap.data() : { categories: [], expenses: [] };
+      tx.set(docRef, { categories: fn(data.categories || []), expenses: data.expenses || [] });
+    });
+  } catch(e){ reportError(e); }
+}
+async function addExpenseRemote(exp){
+  state.expenses = [...state.expenses, exp];
+  if(!docRef) return;
+  try{ await updateDoc(docRef, { expenses: arrayUnion(exp) }); } catch(e){ reportError(e); }
+}
+async function removeExpenseRemote(id){
+  const exp = state.expenses.find(e=>e.id===id);
+  state.expenses = state.expenses.filter(e=>e.id!==id);
+  if(!docRef || !exp) return;
+  try{ await updateDoc(docRef, { expenses: arrayRemove(exp) }); } catch(e){ reportError(e); }
+}
+
+/* ---------------- backup / restore ---------------- */
+
+function backupPayload(){
+  return { app:'ledger', exportedAt:new Date().toISOString(), categories:state.categories, expenses:state.expenses };
+}
+function saveLastCopy(){
+  if(state.expenses.length > 0){
+    try{ localStorage.setItem('ledger_last_copy', JSON.stringify({ savedAt:Date.now(), categories:state.categories, expenses:state.expenses })); } catch(e){}
+  }
+}
+function exportBackup(){
+  const blob = new Blob([JSON.stringify(backupPayload(), null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'ledger-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1500);
+  backupNote = 'Backup downloaded (' + state.expenses.length + ' entries).';
+  renderSetupSheet();
+}
+async function copyBackup(){
+  try{
+    await navigator.clipboard.writeText(JSON.stringify(backupPayload()));
+    backupNote = 'Backup copied. Paste it into a note or message to keep it safe.';
+  } catch(e){
+    backupNote = 'Copy was blocked on this device. Use Download backup instead.';
+  }
+  renderSetupSheet();
+}
+function restoreFromText(text){
+  let data;
+  try{ data = JSON.parse(text); } catch(e){ data = null; }
+  if(!data || !Array.isArray(data.categories) || !Array.isArray(data.expenses)){
+    backupNote = 'That is not a valid backup.'; renderSetupSheet(); return;
+  }
+  if(!confirm('Replace the current data (' + state.expenses.length + ' entries) with this backup (' + data.categories.length + ' categories, ' + data.expenses.length + ' entries)?')) return;
+  state.categories = data.categories; state.expenses = data.expenses;
+  if(docRef){ setDoc(docRef, { categories:data.categories, expenses:data.expenses }).catch(reportError); }
+  backupNote = 'Restored ' + data.expenses.length + ' entries.';
+  render(); renderSetupSheet();
+}
+function restoreFromFile(input){
+  const f = input.files && input.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=>restoreFromText(String(r.result));
+  r.readAsText(f);
+}
+function restoreLastCopy(){
+  let raw = null;
+  try{ raw = localStorage.getItem('ledger_last_copy'); } catch(e){}
+  if(!raw){ backupNote = 'No copy saved on this device yet.'; renderSetupSheet(); return; }
+  restoreFromText(raw);
+}
+function backupSection(){
+  let last = null;
+  try{ last = JSON.parse(localStorage.getItem('ledger_last_copy') || 'null'); } catch(e){}
+  const lastLine = last ? 'Last copy on this device: ' + (last.expenses||[]).length + ' entries, ' + new Date(last.savedAt).toLocaleString() : 'No copy saved on this device yet.';
+  return `<div class="backup-box">
+    <div class="field-label">Backup</div>
+    <div class="status-line" style="margin:0 0 10px;">${state.categories.length} categories, ${state.expenses.length} entries right now</div>
+    <div class="btn-row">
+      <button class="secondary-btn" onclick="exportBackup()">Download backup</button>
+      <button class="secondary-btn" onclick="copyBackup()">Copy backup</button>
+    </div>
+    <label class="secondary-btn">Restore from file<input type="file" accept=".json,application/json" onchange="restoreFromFile(this)" hidden></label>
+    <button class="secondary-btn" onclick="restoreLastCopy()" ${last ? '' : 'disabled'}>Restore last copy on this device</button>
+    <div class="status-line" style="margin:2px 0 0;">${escapeHtml(lastLine)}</div>
+    ${backupNote ? `<div class="status-line">${escapeHtml(backupNote)}</div>` : ''}
+  </div>`;
 }
 
 function boot(){
@@ -360,7 +459,7 @@ function renderDashboard(){
       </div></div>`;
   }).join('') : `<div class="empty-state">No categories yet. Add one from the Categories tab.</div>`;
 
-  const monthExpenses = expensesForMonth().slice().sort((a,b)=> b.date.localeCompare(a.date));
+  const monthExpenses = (showAll ? state.expenses : expensesForMonth()).slice().sort((a,b)=> b.date.localeCompare(a.date));
   const entriesHtml = monthExpenses.length ? monthExpenses.map(e=>{
     const cat = state.categories.find(c=>c.id===e.categoryId);
     const d = new Date(e.date+'T00:00:00');
@@ -369,7 +468,7 @@ function renderDashboard(){
         <div class="entry-info"><div class="entry-note">${escapeHtml(e.note || (cat?cat.name:'Uncategorized'))}</div>
         <div class="entry-meta">${cat?escapeHtml(cat.name):'Uncategorized'} \u00b7 ${d.toLocaleDateString(undefined,{month:'short',day:'numeric'})}${e.by?' \u00b7 '+escapeHtml(e.by):''}</div></div></div>
       <div class="entry-amount">${fmt(e.amount)}</div></div>`;
-  }).join('') : `<div class="empty-state" style="padding:16px 0;">No entries this cycle yet.</div>`;
+  }).join('') : `<div class="empty-state" style="padding:16px 0;">${showAll ? 'No entries are saved at all.' : 'No entries this cycle yet.'}</div>`;
 
   const wSpent = weeklySpent();
   const weeklyLimit = totalLimit/4;
@@ -393,7 +492,7 @@ function renderDashboard(){
     ${totalSpent>0 ? `<div class="chart-row"><div class="donut" style="background:${donutGradient}"></div><div class="legend">${legendHtml}</div></div>` : ''}
     <div class="section-label">Categories</div><div class="ledger">${ledgerHtml}</div>
     <div class="section-label">Weekly pace</div><div class="ledger">${weeklyHtml}</div>
-    <div class="section-label">Recent entries</div><div class="entries">${entriesHtml}</div>
+    <div class="section-label"><span>${showAll ? 'All history ('+state.expenses.length+' entries)' : 'Recent entries'}</span><span class="link-toggle" onclick="toggleAll()">${showAll ? 'This cycle only' : 'Show all history'}</span></div><div class="entries">${entriesHtml}</div>
   `;
 }
 
@@ -414,18 +513,20 @@ function renderCategoriesView(){
 
 /* ---------------- interactions ---------------- */
 
+function toggleAll(){ showAll = !showAll; render(); }
 function setView(v){ view = v; render(); }
-function updateLimit(id, val){ const c = state.categories.find(c=>c.id===id); if(c){ c.limit = Number(val)||0; pushState(); } }
-function deleteCategory(id){ state.categories = state.categories.filter(c=>c.id!==id); pushState(); render(); }
+function updateLimit(id, val){ const lim = Number(val)||0; mutateCategories(cs=>cs.map(c=>c.id===id ? {...c, limit:lim} : c)); }
+function deleteCategory(id){ mutateCategories(cs=>cs.filter(c=>c.id!==id)); render(); }
 function pickNewCatColor(c){ newCatColor = c; render(); }
 function addCategory(){
   const nameEl = document.getElementById('newCatName'); const limitEl = document.getElementById('newCatLimit');
   const name = nameEl.value.trim(); if(!name) return;
-  state.categories.push({id:uid(), name, color:newCatColor, limit:Number(limitEl.value)||0});
+  const cat = {id:uid(), name, color:newCatColor, limit:Number(limitEl.value)||0};
+  mutateCategories(cs=>[...cs.filter(c=>c.id!==cat.id), cat]);
   newCatColor = CAT_COLORS[(state.categories.length)%CAT_COLORS.length];
-  pushState(); render();
+  render();
 }
-function deleteExpense(id){ if(!confirm('Delete this entry?')) return; state.expenses = state.expenses.filter(e=>e.id!==id); pushState(); render(); }
+function deleteExpense(id){ if(!confirm('Delete this entry?')) return; removeExpenseRemote(id); render(); }
 
 function openExpenseSheet(){
   newExpense = { amount:'', categoryId: state.categories[0]?state.categories[0].id:null, note:'' };
@@ -449,9 +550,9 @@ function saveExpense(){
   if(!newExpense.categoryId){ return; }
   const now = new Date();
   const dateStr = now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
-  state.expenses.push({id:uid(), amount:amt, categoryId:newExpense.categoryId, note:newExpense.note.trim(), date:dateStr});
+  addExpenseRemote({id:uid(), amount:amt, categoryId:newExpense.categoryId, note:newExpense.note.trim(), date:dateStr});
   state.month = cycleKeyForDate(dateStr);
-  pushState(); closeSheetEl(); view='dashboard'; render();
+  closeSheetEl(); view='dashboard'; render();
 }
 function shake(id){
   const el = document.getElementById(id); if(!el) return;
@@ -462,7 +563,7 @@ function shake(id){
 
 /* ---------------- setup sheet ---------------- */
 
-function openSetupSheet(){ setupError=''; renderSetupSheet(); openSheetEl(); }
+function openSetupSheet(){ setupError=''; backupNote=''; renderSetupSheet(); openSheetEl(); }
 function renderSetupSheet(){
   const creds = getLocalCreds();
   const sheet = document.getElementById('sheet');
@@ -475,7 +576,8 @@ function renderSetupSheet(){
     <input class="text-field" id="householdInput" placeholder="e.g. millerhousehold" value="${creds ? escapeHtml(creds.code) : ''}">
     ${setupError ? `<div class="status-line err">${escapeHtml(setupError)}</div>` : `<div class="status-line">Status: ${syncStatus==='on'?'connected':syncStatus==='error'?'error \u2014 '+escapeHtml(syncErrorMsg):'not connected'}</div>`}
     <button class="save-btn" onclick="saveSetup()">Save and connect</button>
-    ${creds ? `<button class="link-btn" onclick="disconnectSync()">Disconnect this device</button>` : ''}`;
+    ${creds ? `<button class="link-btn" onclick="disconnectSync()">Disconnect this device</button>` : ''}
+    ${backupSection()}`;
 }
 function saveSetup(){
   const raw = document.getElementById('fbConfigInput').value.trim();
@@ -504,7 +606,7 @@ window.setView = setView; window.shiftMonth = shiftMonth; window.openExpenseShee
 window.selectCat = selectCat; window.saveExpense = saveExpense; window.updateLimit = updateLimit;
 window.deleteCategory = deleteCategory; window.addCategory = addCategory; window.pickNewCatColor = pickNewCatColor;
 window.deleteExpense = deleteExpense; window.openSetupSheet = openSetupSheet; window.saveSetup = saveSetup;
-window.disconnectSync = disconnectSync; window.updateAmount = updateAmount; window.updateNote = updateNote;
+window.exportBackup = exportBackup; window.copyBackup = copyBackup; window.restoreFromFile = restoreFromFile; window.restoreLastCopy = restoreLastCopy; window.toggleAll = toggleAll; window.disconnectSync = disconnectSync; window.updateAmount = updateAmount; window.updateNote = updateNote;
 
 boot();
 </script>
